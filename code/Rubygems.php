@@ -14,6 +14,11 @@ class Rubygems extends Object {
 	 * @var bool - is the version of rubygems currently available good enough? 
 	 */
 	private static $gem_version_ok = null;
+
+    /**
+     * @var bool - are we on Windows?
+     */
+    protected static $is_win = null;
 	
 	/**
 	 * Get the path that gems live in, creating it if it doesn't exist .
@@ -27,6 +32,19 @@ class Rubygems extends Object {
 		if (!file_exists($path)) mkdir($path, 0770);
 		return $path;	
 	}
+
+    /**
+     * @return bool True if we are on windows.
+     */
+    protected static function is_win()
+    {
+        if (self::$is_win !== null)
+            return self::$is_win;
+
+        self::$is_win = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
+
+        return self::$is_win;
+    }
 
 	/**
 	 * Internal helper function that calls an external executable - can't just 
@@ -42,6 +60,13 @@ class Rubygems extends Object {
 	 * @return int - process exit code, or -1 if the process couldn't be executed
 	 */
 	protected static function _run($cmd, &$stdout, &$stderr) {
+
+        if (self::is_win())
+        {
+            $stdout = exec($cmd, $output, $status);
+            return $status;
+        }
+
 		$descriptorspec = array(
 			0 => array("pipe", "r"), // stdin is a pipe that the child will read from
 			1 => array("pipe", "w"), // stdout is a pipe that the child will write to
@@ -95,7 +120,14 @@ class Rubygems extends Object {
 	public static function require_gem($gem, $version = null, $tryupdating = false) {
 		// Check that ruby exists
 		if (self::$ruby_ok === null) {
-			self::$ruby_ok = (bool)`which ruby`;
+            if (self::is_win()) {
+                self::_run('ruby -v', $output, $err);
+
+                // If a command doesn't exist, exec returns an empty str.
+                self::$ruby_ok = (bool)$output;
+            }
+            else
+			    self::$ruby_ok = (bool)`which ruby`;
 		}
 		
 		if (!self::$ruby_ok) {
@@ -122,10 +154,10 @@ class Rubygems extends Object {
 				least version 1.2. Please upgrade.";
 		}
 		
-		$veropt = $version ? "-v '$version'" : '';
+		$veropt = $version ? sprintf('-v "%s"', $version) : '';
 
 		// See if the gem exists. If not, try adding it
-		self::_run("gem list -i $gem $veropt", $out, $err);
+		self::_run("gem list $gem -i $veropt", $out, $err);
 
 		if (trim($out) != 'true' || $tryupdating) {
 			$code = self::_run("gem install $gem $veropt --no-rdoc --no-ri", $out, $err);
@@ -135,7 +167,17 @@ class Rubygems extends Object {
 					install, or repair error. Error message was: $err";
 			}
 		}
+
+        return null;
 	}
+
+    public static function run_cmd($command, $args="", &$out, &$err) {
+        return self::_run(
+            $command . ' ' . $args,
+            $out,
+            $err
+        );
+    }
 	
 	/**
 	 * Execute a command provided by a gem
@@ -154,23 +196,23 @@ class Rubygems extends Object {
 		$reqs = array();
 
 		if (is_string($gems)) {
-			$reqs[] = "-e 'gem \"$gem\", \">= 0\"'";
+			$reqs[] = sprintf('-e "gem \"%s\", \">= 0\""', $gems);
 		} else {
 			foreach ($gems as $gem => $version) {
 				if (!$version) { 
 					$version = '>= 0'; 
 				}
 				
-				$reqs[] = "-e 'gem \"$gem\", \"$version\"'";
+				$reqs[] = sprintf('-e "gem \"%s\", \"%s\""', $gem, $version);
 			}
 		}
 		
-		$version = (isset($gems[$command])) ? $gems[$command] : ">= 0";
+		$version = (isset($gems[$command])) && !empty($gems[$command]) ? $gems[$command] : ">= 0";
 		$reqs = implode(' ', $reqs);
 
 		return self::_run(
-			sprintf("ruby -rubygems $reqs -e 'load Gem.bin_path(\"%s\", \"%s\", \"%s\")' -- $args", 
-				$command, $command, $version
+			sprintf('ruby -rubygems %s -e "load Gem.bin_path(\"%s\", \"%s\", \"%s\")" -- %s',
+				$reqs, $command, $command, $version, $args
 			), 
 			$out, 
 			$err

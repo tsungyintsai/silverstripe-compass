@@ -295,16 +295,26 @@ class Compass extends Controller {
 	 */
 	protected function rebuildDirectory($dir) {
 		if (!is_dir($dir)) return self::error("Could not rebuild $dir, as it doesn't exist");
-		
+
 		self::generate_config($dir);
 		
 		$orig = getcwd();
 		chdir($dir);
 		
-		$args = (self::$sass_version > 2) ? "compile -e production ": "";
-		if(isset($_REQUEST['flush'])) $args .= "--force";
+		if (self::$sass_version > 2 || self::$sass_version === 'latest')
+        {
+            $args = "compile";
+
+            if (!Director::isDev())
+                $args .= ' -e production';
+        }
+        else
+            $args = "";
+
+		if(isset($_GET['flush']))
+            $args .= " --force";
 		
-		$code = Rubygems::run(self::$required_gems[self::$sass_version], "compass",  $args, $out, $err);
+		$code = Rubygems::run_cmd("compass",  $args, $out, $err);
 		chdir($orig);
 		
 		if ($code !== 0) return self::error($err);	
