@@ -25,6 +25,17 @@ class Compass extends Controller {
 	 */ 
 	public static $force_no_rebuild = false;
 
+    /**
+     * @var bool Set to true to only rebuild the current theme. Makes the system
+     * more responsive if we are developing for a site instead core/module dev.
+     */
+    public static $rebuild_current_theme_only = false;
+
+    /**
+     * @var bool True to skip gem checks.
+     */
+    public static $skip_gem_check = false;
+
 	/**
 	 * @var float Which version of sass should we use.
 	 */
@@ -66,6 +77,9 @@ class Compass extends Controller {
 	
 	
 	protected function checkGems() {
+        if (self::$skip_gem_check)
+            return true;
+
 		if (self::$check_gems_result === null) {
 			
 			self::$check_gems_result = true;
@@ -258,6 +272,9 @@ class Compass extends Controller {
 		
 		if (@$_GET['theme']) $dir = THEMES_PATH . DIRECTORY_SEPARATOR . $_GET['theme'];
 		if (@$_GET['module']) $dir = BASE_PATH . DIRECTORY_SEPARATOR . $_GET['module'];
+
+        if (self::$rebuild_current_theme_only)
+            $dir = THEMES_PATH . DIRECTORY_SEPARATOR . SSViewer::current_theme();
 
 		if ($dir) {
 			$this->rebuildDirectory($dir);
